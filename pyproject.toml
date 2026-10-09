@@ -1,0 +1,20 @@
+[project]
+name = "sagemaker-learning"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "boto3>=1.43.109",
+    "pandas>=3.0.6",
+    "sagemaker[train]>=3.24.0",
+    "scikit-learn>=1.9.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.8.0,<0.9.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "process_optimization"
+module-root = "src"

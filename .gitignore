@@ -1,0 +1,6 @@
+.env
+terraform/.terraform
+terraform/.terraform*
+terraform/terraform.tfstate
+terraform/tfplan
+terraform/*.zip
