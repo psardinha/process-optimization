@@ -1,0 +1,93 @@
+name: Train and deploy SageMaker XGBoost
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/train-sagemaker.yml"
+      - "src/process_optimization/**"
+      - "pyproject.toml"
+      - "uv.lock"
+  repository_dispatch:
+    types:
+      - training_dataset_updated
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: uv sync --locked
+
+      - name: Authenticate to AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Prepare data and upload to S3
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          DATA_BUCKET: ${{ vars.DATA_BUCKET }}
+          S3_PREFIX: ${{ vars.S3_PREFIX }}
+          DATASET: ${{ vars.DATASET }}
+          SAGEMAKER_EXECUTION_ROLE_ARN: ${{ secrets.SAGEMAKER_EXECUTION_ROLE_ARN }}
+          TRAINING_IMAGE: ${{ vars.TRAINING_IMAGE }}
+        run: uv run python -m process_optimization.prepare_data
+
+      - name: Train the model on SageMaker
+        id: train
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          DATA_BUCKET: ${{ vars.DATA_BUCKET }}
+          S3_PREFIX: ${{ vars.S3_PREFIX }}
+          DATASET: ${{ vars.DATASET }}
+          SAGEMAKER_EXECUTION_ROLE_ARN: ${{ secrets.SAGEMAKER_EXECUTION_ROLE_ARN }}
+          TRAINING_IMAGE: ${{ vars.TRAINING_IMAGE }}
+        run: uv run python -m process_optimization.train
+
+      - name: Test the model on SageMaker
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          DATA_BUCKET: ${{ vars.DATA_BUCKET }}
+          S3_PREFIX: ${{ vars.S3_PREFIX }}
+          DATASET: ${{ vars.DATASET }}
+          SAGEMAKER_EXECUTION_ROLE_ARN: ${{ secrets.SAGEMAKER_EXECUTION_ROLE_ARN }}
+          TRAINING_IMAGE: ${{ vars.TRAINING_IMAGE }}
+          CONTAINER: ${{ steps.train.outputs.container }}
+          MODEL_ARTIFACT: ${{ steps.train.outputs.model_artifact }}
+        run: uv run python -m process_optimization.evaluation
+
+      - name: Deploy the model on SageMaker
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          DATA_BUCKET: ${{ vars.DATA_BUCKET }}
+          S3_PREFIX: ${{ vars.S3_PREFIX }}
+          DATASET: ${{ vars.DATASET }}
+          SAGEMAKER_EXECUTION_ROLE_ARN: ${{ secrets.SAGEMAKER_EXECUTION_ROLE_ARN }}
+          CONTAINER: ${{ steps.train.outputs.container }}
+          MODEL_ARTIFACT: ${{ steps.train.outputs.model_artifact }}
+        run: uv run python -m process_optimization.deploy
